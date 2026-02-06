@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "No text provided" }, { status: 400 })
         }
 
+        // @ts-ignore - OpenAI Beta types
         const completion = await openai.beta.chat.completions.parse({
             model: "gpt-4o-2024-08-06",
             messages: [

@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
         // We can use a heuristic first (exact string match on keys), 
         // but the LLM is powerful for semantic matching (e.g. "CV" matches "Resume")
 
+        // @ts-ignore - OpenAI Beta types
         const completion = await openai.beta.chat.completions.parse({
             model: "gpt-4o-2024-08-06",
             messages: [
