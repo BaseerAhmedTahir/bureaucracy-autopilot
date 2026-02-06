@@ -1,0 +1,225 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- Auth Models ---
+
+model User {
+  id            String          @id @default(cuid())
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  
+  // Domain Relations
+  profileFacts  UserProfileFact[]
+  evidence      EvidenceSource[]
+  applications  Application[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+ 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+ 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+ 
+  @@id([identifier, token])
+}
+
+// --- Domain Models (The Moat) ---
+
+// 1. User Profile & Evidence
+
+model UserProfileFact {
+  id              String    @id @default(cuid())
+  userId          String
+  key             String    // e.g., "full_name", "passport_number"
+  value           String    // Stored as string, parsed based on usage
+  confidenceScore Float     @default(1.0)
+  isPrimary       Boolean   @default(false)
+  
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources         EvidenceSource[] // Implicit Many-to-Many
+  bindings        ApplicationFieldBinding[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId, key])
+}
+
+enum EvidenceType {
+  PDF
+  WEB_PAGE
+  EMAIL
+  MANUAL_ENTRY
+}
+
+model EvidenceSource {
+  id           String       @id @default(cuid())
+  userId       String
+  type         EvidenceType
+  originalPath String?      // Path to file in storage or URL
+  metadata     Json?        // Stores generic metadata (e.g. email subject, page title)
+  
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facts        UserProfileFact[]
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// 2. Application & Requirements
+
+enum ApplicationType {
+  INTERNSHIP
+  SCHOLARSHIP
+  VISA
+  OTHER
+}
+
+enum ApplicationStatus {
+  NOT_STARTED
+  NEEDS_INFO
+  IN_PROGRESS
+  READY_TO_SUBMIT
+  SUBMITTED
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  userId      String
+  title       String
+  type        ApplicationType
+  status      ApplicationStatus @default(NOT_STARTED)
+  deadline    DateTime?
+  
+  // Relations
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requirements ApplicationRequirement[]
+  documents   GeneratedDocument[]
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+enum DataType {
+  TEXT
+  DATE
+  BOOLEAN
+  FILE
+  CHOICE
+}
+
+model ApplicationRequirement {
+  id            String    @id @default(cuid())
+  applicationId String
+  
+  fieldKey      String    // Normalized key, e.g. "resume"
+  label         String    // "Please upload your CV"
+  description   String?   // "Must be PDF, max 2MB"
+  dataType      DataType  @default(TEXT)
+  isRequired    Boolean   @default(true)
+  constraints   Json?     // Regex, list of choices, etc.
+  
+  // Relations
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  binding       ApplicationFieldBinding?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum BindingStatus {
+  AUTO_FILLED
+  NEEDS_CONFIRMATION
+  OVERRIDDEN
+  MANUAL_INPUT
+}
+
+model ApplicationFieldBinding {
+  id            String    @id @default(cuid())
+  requirementId String    @unique
+  factId        String?
+  
+  value         String?   // The actual value used for this application
+  status        BindingStatus @default(AUTO_FILLED)
+  
+  // Relations
+  requirement   ApplicationRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  fact          UserProfileFact?       @relation(fields: [factId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// 3. Generated Documents
+
+enum DocumentType {
+  SOP
+  COVER_LETTER
+  AFFIDAVIT
+  OTHER
+}
+
+enum DocumentStatus {
+  DRAFT
+  FINAL
+}
+
+model GeneratedDocument {
+  id            String         @id @default(cuid())
+  applicationId String
+  type          DocumentType
+  path          String         // Storage path
+  status        DocumentStatus @default(DRAFT)
+  content       String?        // Markdown/Text content for editing
+  
+  // Relations
+  application   Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
